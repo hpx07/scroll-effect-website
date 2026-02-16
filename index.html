@@ -12,10 +12,25 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
         rel="stylesheet">
+    <link rel="preload" href="./frames/001.png" as="image" type="image/png">
     <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- PRELOADER (Blocks interaction until loaded)    -->
+    <!-- ═══════════════════════════════════════════════ -->
+    <div id="preloader" class="preloader">
+        <div class="loader-content">
+            <div class="loader-logo">◈</div>
+            <div class="loader-text">INITIALIZING <span id="loader-progress">0%</span></div>
+            <div class="loader-bar">
+                <div id="loader-bar-inner" class="loader-bar-inner"></div>
+            </div>
+            <div class="loader-status">CALIBRATING GRAVITY WELLS...</div>
+        </div>
+    </div>
 
     <!-- ═══════════════════════════════════════════════ -->
     <!-- FIXED FRAME CANVAS (viewport background)       -->

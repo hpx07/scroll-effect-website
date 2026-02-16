@@ -1,7 +1,8 @@
 /* ═══════════════════════════════════════════════════════════
    ANTIGRAVITY — Scroll Engine & Interactions
-   Optimized: double-buffered canvas, skip-redundant draws,
-   delta-time lerp, pre-decoded images, GPU compositing
+   Optimized: double-buffered canvas, createImageBitmap,
+   delta-time lerp, progressive load, single rAF loop,
+   Service Worker registration
    ═══════════════════════════════════════════════════════════ */
 
 (() => {
@@ -11,120 +12,173 @@
     const CONFIG = {
         FRAME_COUNT: 150,
         FRAME_PATH: './frames/',
-        PARALLAX_SPEEDS: {
-            layer1: 0.2,
-            layer2: 0.5,
-        },
+        PARALLAX_SPEEDS: { layer1: 0.2, layer2: 0.5 },
         HERO_SCALE_MAX: 1.12,
         LERP_FACTOR: 0.1,
         CANVAS_LERP: 0.14,
         TARGET_FPS: 60,
+        PRELOAD_RADIUS: 12,       // frames ahead/behind to eagerly load
+        BATCH_LOAD: 3,            // frames to trickle-load per tick
     };
 
     /* ── State ──────────────────────────────────────────── */
     const state = {
-        scrollY: 0,
         targetScrollY: 0,
         smoothScrollY: 0,
-        scrollProgress: 0,
         targetScrollProgress: 0,
         smoothScrollProgress: 0,
-        currentFrame: -1,       // -1 so first draw always triggers
-        displayedFrame: -1,     // track what's actually on screen
+        currentFrame: -1,
+        displayedFrame: -1,
         targetFrame: 0,
-        imagesLoaded: 0,
-        allLoaded: false,
         lastTime: 0,
+        mouseX: 0,
+        mouseY: 0,
+        smoothMouseX: 0,
+        smoothMouseY: 0,
     };
 
-    /* ── DOM References ─────────────────────────────────── */
-    const $ = (sel) => document.querySelector(sel);
-    const $$ = (sel) => document.querySelectorAll(sel);
+    /* ── DOM References (cached once) ──────────────────── */
+    const $ = (s) => document.querySelector(s);
+    const $$ = (s) => document.querySelectorAll(s);
 
-    const DOM = {
-        layer1: $('#parallax-layer-1'),
-        layer2: $('#parallax-layer-2'),
-        canvas: $('#frame-canvas'),
-        heroSection: $('#hero'),
-        heroContent: $('.hero-content'),
-        nav: $('#main-nav'),
-        revealEls: $$('.reveal-up'),
-    };
+    const DOM = {};
 
-    const ctx = DOM.canvas.getContext('2d', { alpha: false });
+    /* ── Canvas contexts ───────────────────────────────── */
+    let ctx, offscreen, offCtx;
+    let canvasW = 0, canvasH = 0, dpr = 1;
 
-    /* ── Offscreen buffer for double-buffering ─────────── */
-    let offscreen = null;
-    let offCtx = null;
-    let canvasW = 0;
-    let canvasH = 0;
-    let dpr = 1;
-
-    /* ── Frame Image Storage ────────────────────────────── */
+    /* ── Frame Storage ─────────────────────────────────── */
     const frames = new Array(CONFIG.FRAME_COUNT).fill(null);
-    const frameStatus = new Array(CONFIG.FRAME_COUNT).fill(0); // 0=idle, 1=loading, 2=ready
+    const frameStatus = new Uint8Array(CONFIG.FRAME_COUNT);
+    let anyFrameReady = false;
+    let framesLoadedCount = 0;
 
-    /* ── Build frame URL ───────────────────────────────── */
-    function frameUrl(index) {
-        const num = String(index + 1).padStart(3, '0');
-        return `${CONFIG.FRAME_PATH}${num}.png`;
+    /* ── Service Worker Registration ───────────────────── */
+    function registerSW() {
+        if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+            navigator.serviceWorker.register('./sw.js').catch(() => { });
+        }
     }
 
-    /* ── Load a single frame (returns promise) ─────────── */
+    /* ── Build frame URL ───────────────────────────────── */
+    function frameUrl(i) {
+        return `${CONFIG.FRAME_PATH}${String(i + 1).padStart(3, '0')}.png`;
+    }
+
+    /* ── Load a single frame ───────────────────────────── */
     function loadFrame(index) {
-        if (frameStatus[index] >= 1) return; // already loading or ready
+        if (frameStatus[index] >= 1) return;
         frameStatus[index] = 1;
 
+        const url = frameUrl(index);
+
+        // Try lightweight createImageBitmap first (if not on file:// protocol, which blocks fetch)
+        if (typeof createImageBitmap === 'function' && location.protocol !== 'file:') {
+            fetch(url)
+                .then((r) => { if (!r.ok) throw r; return r.blob(); })
+                .then((blob) => createImageBitmap(blob))
+                .then((bmp) => {
+                    frames[index] = bmp;
+                    frameStatus[index] = 2;
+                    onFrameReady(index);
+                })
+                .catch(() => {
+                    // Fallback to standard Image loading on fetch error
+                    loadFrameFallback(index, url);
+                });
+        } else {
+            // Fallback for file:// protocol or browsers without createImageBitmap
+            loadFrameFallback(index, url);
+        }
+    }
+
+    function loadFrameFallback(index, url) {
         const img = new Image();
-        img.src = frameUrl(index);
-
-        const markReady = () => {
-            frameStatus[index] = 2;
-            frames[index] = img;
-            // Mark as loaded once first frame is ready (show immediately)
-            if (!state.allLoaded && index === 0) {
-                state.allLoaded = true;
-                resizeCanvas();
-                drawFrameToBuffer(0);
-                blitBuffer();
-            }
-        };
-
+        img.src = url;
         img.onload = () => {
             if (img.decode) {
-                img.decode().then(markReady).catch(markReady);
+                img.decode()
+                    .then(() => { frames[index] = img; frameStatus[index] = 2; onFrameReady(index); })
+                    .catch(() => { frames[index] = img; frameStatus[index] = 2; onFrameReady(index); });
             } else {
-                markReady();
+                frames[index] = img;
+                frameStatus[index] = 2;
+                onFrameReady(index);
             }
         };
-        img.onerror = () => { frameStatus[index] = 0; }; // retry later
+        img.onerror = () => { frameStatus[index] = 0; };
+    }
+
+    function onFrameReady(index) {
+        framesLoadedCount++;
+        updatePreloader();
+
+        if (!anyFrameReady) {
+            anyFrameReady = true;
+            resizeCanvas();
+            drawFrameToBuffer(index);
+            blitBuffer();
+        }
+    }
+
+    /* ── Preloader Logic ───────────────────────────────── */
+    function updatePreloader() {
+        // We define "ready" as having ~20% of frames loaded (enough for kickoff)
+        // or specifically the first 25 frames
+        const progress = Math.min((framesLoadedCount / 25) * 100, 100);
+
+        const textEl = document.getElementById('loader-progress');
+        const barEl = document.getElementById('loader-bar-inner');
+        const loaderEl = document.getElementById('preloader');
+
+        if (textEl) textEl.textContent = `${Math.round(progress)}%`;
+        if (barEl) barEl.style.width = `${progress}%`;
+
+        // Hide loader when we have enough buffer
+        if (framesLoadedCount >= 25 && loaderEl && !loaderEl.classList.contains('hidden')) {
+            loaderEl.classList.add('hidden');
+            setTimeout(() => {
+                loaderEl.style.display = 'none';
+            }, 800);
+        }
     }
 
     /* ── Progressive Preloader ─────────────────────────── */
+    let preloadTimer = null;
+
     function preloadFrames() {
-        // Phase 1: Load ~20 evenly-spaced keyframes for immediate coverage
-        const keyframeCount = 20;
-        for (let i = 0; i < keyframeCount; i++) {
-            const idx = Math.round(i * (CONFIG.FRAME_COUNT - 1) / (keyframeCount - 1));
-            loadFrame(idx);
+        // Phase 1: Evenly-spaced keyframes for instant coverage
+        const keyCount = 20;
+        for (let i = 0; i < keyCount; i++) {
+            loadFrame(Math.round(i * (CONFIG.FRAME_COUNT - 1) / (keyCount - 1)));
         }
 
-        // Phase 2: Continuously load nearby frames based on scroll position
-        setInterval(() => {
-            const center = state.targetFrame;
-            // Load frames in a radius around current position
-            for (let offset = 0; offset <= 8; offset++) {
-                if (center + offset < CONFIG.FRAME_COUNT) loadFrame(center + offset);
-                if (center - offset >= 0) loadFrame(center - offset);
+        // Phase 2: Proximity + trickle loading
+        preloadTimer = setInterval(proximityLoad, 80);
+    }
+
+    function proximityLoad() {
+        const center = state.targetFrame;
+
+        // Load nearby frames first
+        for (let d = 0; d <= CONFIG.PRELOAD_RADIUS; d++) {
+            if (center + d < CONFIG.FRAME_COUNT) loadFrame(center + d);
+            if (center - d >= 0) loadFrame(center - d);
+        }
+
+        // Trickle-load remaining (batch)
+        let loaded = 0;
+        for (let i = 0; i < CONFIG.FRAME_COUNT && loaded < CONFIG.BATCH_LOAD; i++) {
+            if (frameStatus[i] === 0) {
+                loadFrame(i);
+                loaded++;
             }
-            // Also trickle-load remaining frames in background
-            for (let i = 0; i < CONFIG.FRAME_COUNT; i++) {
-                if (frameStatus[i] === 0) {
-                    loadFrame(i);
-                    break; // one per tick to avoid network flood
-                }
-            }
-        }, 100);
+        }
+
+        // All done? Stop the interval
+        if (frameStatus.every((s) => s >= 1)) {
+            clearInterval(preloadTimer);
+        }
     }
 
     /* ── Canvas Sizing ─────────────────────────────────── */
@@ -133,18 +187,24 @@
         canvasW = window.innerWidth;
         canvasH = window.innerHeight;
 
-        DOM.canvas.width = canvasW * dpr;
-        DOM.canvas.height = canvasH * dpr;
-        DOM.canvas.style.width = '100vw';
-        DOM.canvas.style.height = '100vh';
+        const pw = canvasW * dpr;
+        const ph = canvasH * dpr;
 
-        // Recreate offscreen buffer at matching size
-        offscreen = document.createElement('canvas');
-        offscreen.width = canvasW * dpr;
-        offscreen.height = canvasH * dpr;
+        DOM.canvas.width = pw;
+        DOM.canvas.height = ph;
+        DOM.canvas.style.width = canvasW + 'px';
+        DOM.canvas.style.height = canvasH + 'px';
+
+        // Use OffscreenCanvas if supported (zero main-thread overhead)
+        if (typeof OffscreenCanvas === 'function') {
+            offscreen = new OffscreenCanvas(pw, ph);
+        } else {
+            offscreen = document.createElement('canvas');
+            offscreen.width = pw;
+            offscreen.height = ph;
+        }
         offCtx = offscreen.getContext('2d', { alpha: false });
 
-        // Force redraw after resize
         state.displayedFrame = -1;
     }
 
@@ -152,212 +212,193 @@
     function drawFrameToBuffer(index) {
         if (!offCtx) return;
 
-        // Find the best available frame (exact or nearest loaded)
         let img = frames[index];
-        if (!img || !img.complete || !img.naturalWidth) {
-            // Search nearest loaded frame in both directions
-            for (let offset = 1; offset < CONFIG.FRAME_COUNT; offset++) {
-                const before = index - offset;
-                const after = index + offset;
-                if (before >= 0 && frames[before] && frames[before].complete && frames[before].naturalWidth) {
-                    img = frames[before]; break;
-                }
-                if (after < CONFIG.FRAME_COUNT && frames[after] && frames[after].complete && frames[after].naturalWidth) {
-                    img = frames[after]; break;
-                }
+
+        // Fallback to nearest loaded frame
+        if (!img) {
+            for (let d = 1; d < CONFIG.FRAME_COUNT; d++) {
+                if (index - d >= 0 && frames[index - d]) { img = frames[index - d]; break; }
+                if (index + d < CONFIG.FRAME_COUNT && frames[index + d]) { img = frames[index + d]; break; }
             }
-            if (!img) return; // nothing loaded yet
+            if (!img) return;
         }
 
-        const cw = canvasW * dpr;
-        const ch = canvasH * dpr;
+        const pw = canvasW * dpr;
+        const ph = canvasH * dpr;
 
-        // Cover-fit calculation
-        const imgRatio = img.naturalWidth / img.naturalHeight;
-        const canvasRatio = cw / ch;
-        let drawW, drawH, drawX, drawY;
+        // Cover-fit
+        const iw = img.width || img.naturalWidth;
+        const ih = img.height || img.naturalHeight;
+        const ir = iw / ih;
+        const cr = pw / ph;
+        let dw, dh, dx, dy;
 
-        if (canvasRatio > imgRatio) {
-            drawW = cw;
-            drawH = cw / imgRatio;
-            drawX = 0;
-            drawY = (ch - drawH) / 2;
+        if (cr > ir) {
+            dw = pw; dh = pw / ir; dx = 0; dy = (ph - dh) / 2;
         } else {
-            drawH = ch;
-            drawW = ch * imgRatio;
-            drawX = (cw - drawW) / 2;
-            drawY = 0;
+            dh = ph; dw = ph * ir; dx = (pw - dw) / 2; dy = 0;
         }
 
-        // Draw to offscreen (no visible flicker)
         offCtx.fillStyle = '#06050b';
-        offCtx.fillRect(0, 0, cw, ch);
-        offCtx.drawImage(img, drawX, drawY, drawW, drawH);
+        offCtx.fillRect(0, 0, pw, ph);
+        offCtx.drawImage(img, dx, dy, dw, dh);
     }
 
-    /* ── Blit offscreen buffer to visible canvas ───────── */
+    /* ── Blit buffer to visible canvas ─────────────────── */
     function blitBuffer() {
         if (!offscreen) return;
         ctx.drawImage(offscreen, 0, 0);
     }
 
-    /* ── Lerp with delta-time compensation ─────────────── */
-    function lerp(current, target, factor, dt) {
-        // Delta-time adjusted lerp for framerate independence
-        const f = 1 - Math.pow(1 - factor, dt * CONFIG.TARGET_FPS);
-        const result = current + (target - current) * f;
-        // Snap when very close to avoid infinite micro-drifts
-        if (Math.abs(target - result) < 0.001) return target;
-        return result;
+    /* ── Delta-time Lerp ───────────────────────────────── */
+    function lerp(c, t, f, dt) {
+        const r = c + (t - c) * (1 - Math.pow(1 - f, dt * CONFIG.TARGET_FPS));
+        return Math.abs(t - r) < 0.0005 ? t : r;
     }
 
-    /* ── Core Scroll Handler ───────────────────────────── */
+    /* ── Scroll Handler ────────────────────────────────── */
     function onScroll() {
         state.targetScrollY = window.scrollY;
 
-        const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
-        state.targetScrollProgress = maxScroll > 0
-            ? Math.min(Math.max(window.scrollY / maxScroll, 0), 1)
-            : 0;
-
+        const max = document.documentElement.scrollHeight - window.innerHeight;
+        state.targetScrollProgress = max > 0 ? Math.min(window.scrollY / max, 1) : 0;
         state.targetFrame = Math.min(
             Math.round(state.targetScrollProgress * (CONFIG.FRAME_COUNT - 1)),
             CONFIG.FRAME_COUNT - 1
         );
 
-        // Nav
         DOM.nav.classList.toggle('scrolled', window.scrollY > 80);
-
-        // Hero fade
         DOM.heroContent.classList.toggle('faded', window.scrollY > window.innerHeight * 0.15);
     }
 
-    /* ── Animation Loop (rAF with delta-time) ──────────── */
+    /* ═══════════════════════════════════════════════════════
+       SINGLE rAF LOOP — merges parallax + canvas + mouse
+       ═══════════════════════════════════════════════════════ */
     function animate(timestamp) {
-        // Delta time in seconds (capped to avoid jumps after tab switch)
         const dt = Math.min((timestamp - state.lastTime) / 1000, 0.1) || 0.016;
         state.lastTime = timestamp;
 
-        // Smooth interpolation with delta-time
+        // ── Smooth scroll values ──
         state.smoothScrollY = lerp(state.smoothScrollY, state.targetScrollY, CONFIG.LERP_FACTOR, dt);
         state.smoothScrollProgress = lerp(state.smoothScrollProgress, state.targetScrollProgress, CONFIG.CANVAS_LERP, dt);
 
-        // Smooth frame interpolation
-        const smoothFrame = lerp(
+        // ── Frame interpolation ──
+        const sf = lerp(
             state.currentFrame < 0 ? state.targetFrame : state.currentFrame,
             state.targetFrame,
             CONFIG.CANVAS_LERP,
             dt
         );
-        state.currentFrame = smoothFrame;
-        const renderFrame = Math.round(smoothFrame);
+        state.currentFrame = sf;
+        const renderFrame = Math.round(sf);
 
-        // ── Layer 1: Deep background parallax (0.2x) ──
-        const layer1Y = -(state.smoothScrollY * CONFIG.PARALLAX_SPEEDS.layer1);
-        DOM.layer1.style.transform = `translate3d(0, ${layer1Y}px, 0)`;
+        // ── Parallax layers ──
+        DOM.layer1.style.transform = `translate3d(0,${-(state.smoothScrollY * CONFIG.PARALLAX_SPEEDS.layer1)}px,0)`;
+        DOM.layer2.style.transform = `translate3d(0,${-(state.smoothScrollY * CONFIG.PARALLAX_SPEEDS.layer2)}px,0)`;
 
-        // ── Layer 2: Floating elements parallax (0.5x) ──
-        const layer2Y = -(state.smoothScrollY * CONFIG.PARALLAX_SPEEDS.layer2);
-        DOM.layer2.style.transform = `translate3d(0, ${layer2Y}px, 0)`;
-
-        // ── Canvas: only redraw when frame actually changes ──
-        if (renderFrame !== state.displayedFrame) {
-            const clampedFrame = Math.min(Math.max(renderFrame, 0), CONFIG.FRAME_COUNT - 1);
-            drawFrameToBuffer(clampedFrame);
+        // ── Canvas draw (only on frame change) ──
+        if (renderFrame !== state.displayedFrame && anyFrameReady) {
+            const cf = Math.min(Math.max(renderFrame, 0), CONFIG.FRAME_COUNT - 1);
+            drawFrameToBuffer(cf);
             blitBuffer();
-            state.displayedFrame = clampedFrame;
+            state.displayedFrame = cf;
         }
 
-        // Scale effect (continuous, not tied to frame changes)
-        const scale = 1 + (state.smoothScrollProgress * (CONFIG.HERO_SCALE_MAX - 1));
-        DOM.canvas.style.transform = `translate3d(0, 0, 0) scale(${scale})`;
+        // ── Canvas scale ──
+        const scale = 1 + state.smoothScrollProgress * (CONFIG.HERO_SCALE_MAX - 1);
+        DOM.canvas.style.transform = `translate3d(0,0,0) scale(${scale})`;
+
+        // ── Mouse parallax (merged into single loop) ──
+        state.smoothMouseX += (state.mouseX - state.smoothMouseX) * 0.04;
+        state.smoothMouseY += (state.mouseY - state.smoothMouseY) * 0.04;
+
+        const mx = state.smoothMouseX;
+        const my = state.smoothMouseY;
+
+        for (let i = 0; i < blobEls.length; i++) {
+            const f = 8 + i * 4;
+            blobEls[i].style.transform = `translate3d(${mx * f}px,${my * f}px,0)`;
+        }
+        for (let i = 0; i < shardEls.length; i++) {
+            const f = 5 + i * 3;
+            shardEls[i].style.transform = `translate3d(${mx * f}px,${my * f}px,0)`;
+        }
 
         requestAnimationFrame(animate);
     }
 
-    /* ── Intersection Observer for Reveal Animations ───── */
+    /* ── Cached element arrays for mouse parallax ──────── */
+    let blobEls = [];
+    let shardEls = [];
+
+    /* ── Intersection Observer ─────────────────────────── */
     function initRevealObserver() {
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach((entry) => {
-                if (entry.isIntersecting) {
-                    entry.target.classList.add('visible');
-                    observer.unobserve(entry.target);
+        const obs = new IntersectionObserver((entries) => {
+            for (let i = 0; i < entries.length; i++) {
+                if (entries[i].isIntersecting) {
+                    entries[i].target.classList.add('visible');
+                    obs.unobserve(entries[i].target);
                 }
-            });
+            }
         }, { threshold: 0.15, rootMargin: '0px 0px -60px 0px' });
 
-        DOM.revealEls.forEach((el) => observer.observe(el));
+        DOM.revealEls.forEach((el) => obs.observe(el));
     }
 
-    /* ── Smooth Scroll for Nav Links ───────────────────── */
+    /* ── Smooth Nav ────────────────────────────────────── */
     function initSmoothNav() {
         $$('.nav-link[href^="#"]').forEach((link) => {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
-                const target = document.querySelector(link.getAttribute('href'));
-                if (target) {
-                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }
+                const t = document.querySelector(link.getAttribute('href'));
+                if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
             });
         });
     }
 
-    /* ── Debounced Resize Handler ──────────────────────── */
+    /* ── Debounced Resize ──────────────────────────────── */
     let resizeTimer;
     function onResize() {
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(() => {
             resizeCanvas();
-            if (state.allLoaded && state.displayedFrame >= 0) {
+            if (state.displayedFrame >= 0) {
                 drawFrameToBuffer(state.displayedFrame);
                 blitBuffer();
             }
         }, 100);
     }
 
-    /* ── Mouse parallax on floating elements (subtle) ──── */
-    function initMouseParallax() {
-        let mouseX = 0, mouseY = 0;
-        let currentMX = 0, currentMY = 0;
-
-        document.addEventListener('mousemove', (e) => {
-            mouseX = (e.clientX / window.innerWidth - 0.5) * 2;
-            mouseY = (e.clientY / window.innerHeight - 0.5) * 2;
-        }, { passive: true });
-
-        // Cache DOM queries
-        const blobs = document.querySelectorAll('.chrome-blob');
-        const shards = document.querySelectorAll('.crystal-shard');
-
-        function updateMouse() {
-            currentMX += (mouseX - currentMX) * 0.04;
-            currentMY += (mouseY - currentMY) * 0.04;
-
-            blobs.forEach((blob, i) => {
-                const factor = 8 + i * 4;
-                blob.style.transform = `translate3d(${currentMX * factor}px, ${currentMY * factor}px, 0)`;
-            });
-
-            shards.forEach((shard, i) => {
-                const factor = 5 + i * 3;
-                shard.style.transform = `translate3d(${currentMX * factor}px, ${currentMY * factor}px, 0)`;
-            });
-
-            requestAnimationFrame(updateMouse);
-        }
-
-        requestAnimationFrame(updateMouse);
-    }
-
     /* ── Initialize ─────────────────────────────────────── */
     function init() {
+        // Cache DOM
+        DOM.layer1 = $('#parallax-layer-1');
+        DOM.layer2 = $('#parallax-layer-2');
+        DOM.canvas = $('#frame-canvas');
+        DOM.heroSection = $('#hero');
+        DOM.heroContent = $('.hero-content');
+        DOM.nav = $('#main-nav');
+        DOM.revealEls = $$('.reveal-up');
+
+        ctx = DOM.canvas.getContext('2d', { alpha: false });
+        blobEls = Array.from(document.querySelectorAll('.chrome-blob'));
+        shardEls = Array.from(document.querySelectorAll('.crystal-shard'));
+
+        // Register Service Worker
+        registerSW();
+
+        // Start loading
         preloadFrames();
         initRevealObserver();
         initSmoothNav();
-        initMouseParallax();
 
+        // Events
         window.addEventListener('scroll', onScroll, { passive: true });
         window.addEventListener('resize', onResize, { passive: true });
+        document.addEventListener('mousemove', (e) => {
+            state.mouseX = (e.clientX / window.innerWidth - 0.5) * 2;
+            state.mouseY = (e.clientY / window.innerHeight - 0.5) * 2;
+        }, { passive: true });
 
         onScroll();
         requestAnimationFrame(animate);
