@@ -9,7 +9,7 @@
 
     /* ── Configuration ──────────────────────────────────── */
     const CONFIG = {
-        FRAME_COUNT: 40,
+        FRAME_COUNT: 150,
         FRAME_PATH: './frames/',
         PARALLAX_SPEEDS: {
             layer1: 0.2,
