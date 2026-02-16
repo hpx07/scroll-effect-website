@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description"
+        content="ANTIGRAVITY — A premium scroll-driven experience with multi-layer parallax and frame-by-frame animation.">
+    <title>ANTIGRAVITY — Defy Everything</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- FIXED FRAME CANVAS (viewport background)       -->
+    <!-- ═══════════════════════════════════════════════ -->
+    <canvas id="frame-canvas" class="frame-canvas-fixed" aria-hidden="true"></canvas>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- LAYER 1: Deep Space Nebula Background (0.2x)   -->
+    <!-- ═══════════════════════════════════════════════ -->
+    <div id="parallax-layer-1" class="parallax-layer layer-deep" aria-hidden="true">
+        <div class="nebula-core"></div>
+        <div class="nebula-arm nebula-arm--1"></div>
+        <div class="nebula-arm nebula-arm--2"></div>
+        <div class="nebula-arm nebula-arm--3"></div>
+        <div class="stars stars--sm"></div>
+        <div class="stars stars--md"></div>
+        <div class="stars stars--lg"></div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- LAYER 2: Floating Chrome Elements (0.5x)       -->
+    <!-- ═══════════════════════════════════════════════ -->
+    <div id="parallax-layer-2" class="parallax-layer layer-float" aria-hidden="true">
+        <div class="chrome-blob blob--1"></div>
+        <div class="chrome-blob blob--2"></div>
+        <div class="chrome-blob blob--3"></div>
+        <div class="chrome-blob blob--4"></div>
+        <div class="chrome-blob blob--5"></div>
+        <div class="crystal-shard shard--1"></div>
+        <div class="crystal-shard shard--2"></div>
+        <div class="crystal-shard shard--3"></div>
+        <div class="crystal-shard shard--4"></div>
+        <div class="crystal-shard shard--5"></div>
+        <div class="crystal-shard shard--6"></div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <!-- LAYER 3: Interactive Foreground (1x)            -->
+    <!-- ═══════════════════════════════════════════════ -->
+    <div id="parallax-layer-3" class="parallax-layer layer-content">
+
+        <!-- ── Navigation ──────────────────────────── -->
+        <nav id="main-nav" class="glass-nav">
+            <div class="nav-inner">
+                <a href="#" class="nav-logo">
+                    <span class="logo-icon">◈</span>
+                    <span class="logo-text">ANTIGRAVITY</span>
+                </a>
+                <div class="nav-links">
+                    <a href="#showcase" class="nav-link">Showcase</a>
+                    <a href="#features" class="nav-link">Features</a>
+                    <a href="#specs" class="nav-link">Specs</a>
+                    <a href="#cta" class="nav-link nav-link--cta">Experience</a>
+                </div>
+            </div>
+        </nav>
+
+        <!-- ── HERO SECTION ──────────────────────────── -->
+        <section id="hero" class="hero-section">
+            <div class="hero-overlay">
+                <div class="hero-content">
+                    <p class="hero-eyebrow">DEFYING GRAVITY SINCE 2026</p>
+                    <h1 class="hero-title">
+                        <span class="title-line title-line--1">ANTI</span>
+                        <span class="title-line title-line--2">GRAVITY</span>
+                    </h1>
+                    <p class="hero-subtitle">Experience the impossible. Scroll to defy physics.</p>
+                    <div class="hero-scroll-hint">
+                        <div class="scroll-line"></div>
+                        <span>SCROLL</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── PRODUCT SHOWCASE ──────────────────────── -->
+        <section id="showcase" class="content-section showcase-section">
+            <div class="section-inner">
+                <div class="section-header reveal-up">
+                    <span class="section-tag">01 — SHOWCASE</span>
+                    <h2 class="section-title">Engineered<br><em>Beyond Limits</em></h2>
+                </div>
+                <div class="showcase-grid">
+                    <div class="glass-card glass-card--lg reveal-up" id="card-showcase-1">
+                        <div class="card-glow"></div>
+                        <div class="card-number">01</div>
+                        <h3 class="card-title">Zero-G Construction</h3>
+                        <p class="card-text">Precision-molded Foamposite shell with liquid chrome wave patterns. Each
+                            pair is sculpted under zero-gravity simulation for flawless aerodynamic contours.</p>
+                        <div class="card-stat">
+                            <span class="stat-value">0.2g</span>
+                            <span class="stat-label">Effective Weight</span>
+                        </div>
+                    </div>
+                    <div class="glass-card glass-card--sm reveal-up" id="card-showcase-2">
+                        <div class="card-glow"></div>
+                        <div class="card-number">02</div>
+                        <h3 class="card-title">Reactive Cushion</h3>
+                        <p class="card-text">Dual-density air unit returns 97% energy. Every step launches you forward.
+                        </p>
+                        <div class="card-stat">
+                            <span class="stat-value">97%</span>
+                            <span class="stat-label">Energy Return</span>
+                        </div>
+                    </div>
+                    <div class="glass-card glass-card--sm reveal-up" id="card-showcase-3">
+                        <div class="card-glow"></div>
+                        <div class="card-number">03</div>
+                        <h3 class="card-title">Void-Black Core</h3>
+                        <p class="card-text">Carbon-fiber shank plate absorbs impact, channels propulsion through the
+                            midsole matrix.</p>
+                        <div class="card-stat">
+                            <span class="stat-value">4X</span>
+                            <span class="stat-label">Impact Absorption</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── FEATURES ──────────────────────────────── -->
+        <section id="features" class="content-section features-section">
+            <div class="section-inner">
+                <div class="section-header reveal-up">
+                    <span class="section-tag">02 — FEATURES</span>
+                    <h2 class="section-title">Built for<br><em>the Impossible</em></h2>
+                </div>
+                <div class="features-grid">
+                    <div class="glass-card feature-card reveal-up" id="card-feature-1">
+                        <div class="card-glow"></div>
+                        <div class="feature-icon">⬡</div>
+                        <h3 class="card-title">Adaptive Fit Matrix</h3>
+                        <p class="card-text">Self-adjusting internal cage morphs to your foot's unique geometry in
+                            real-time. No break-in period — instant perfection.</p>
+                    </div>
+                    <div class="glass-card feature-card reveal-up" id="card-feature-2">
+                        <div class="card-glow"></div>
+                        <div class="feature-icon">◇</div>
+                        <h3 class="card-title">Phantom Traction</h3>
+                        <p class="card-text">Micro-engineered outsole pattern provides omnidirectional grip on any
+                            surface while feeling completely frictionless in motion.</p>
+                    </div>
+                    <div class="glass-card feature-card reveal-up" id="card-feature-3">
+                        <div class="card-glow"></div>
+                        <div class="feature-icon">◈</div>
+                        <h3 class="card-title">Chromatic Shift</h3>
+                        <p class="card-text">Photoreactive pigments in the upper shift between deep violet and liquid
+                            chrome depending on lighting angle and intensity.</p>
+                    </div>
+                    <div class="glass-card feature-card reveal-up" id="card-feature-4">
+                        <div class="card-glow"></div>
+                        <div class="feature-icon">△</div>
+                        <h3 class="card-title">Thermal Regulation</h3>
+                        <p class="card-text">Phase-change material lining absorbs and releases heat, maintaining optimal
+                            temperature across all conditions.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── SPECS ─────────────────────────────────── -->
+        <section id="specs" class="content-section specs-section">
+            <div class="section-inner">
+                <div class="section-header reveal-up">
+                    <span class="section-tag">03 — SPECIFICATIONS</span>
+                    <h2 class="section-title">The<br><em>Numbers</em></h2>
+                </div>
+                <div class="specs-grid reveal-up">
+                    <div class="glass-card spec-card" id="spec-1">
+                        <div class="card-glow"></div>
+                        <div class="spec-value">280<span class="spec-unit">g</span></div>
+                        <div class="spec-label">Total Weight</div>
+                    </div>
+                    <div class="glass-card spec-card" id="spec-2">
+                        <div class="card-glow"></div>
+                        <div class="spec-value">42<span class="spec-unit">mm</span></div>
+                        <div class="spec-label">Stack Height</div>
+                    </div>
+                    <div class="glass-card spec-card" id="spec-3">
+                        <div class="card-glow"></div>
+                        <div class="spec-value">12<span class="spec-unit">mm</span></div>
+                        <div class="spec-label">Heel-Toe Drop</div>
+                    </div>
+                    <div class="glass-card spec-card" id="spec-4">
+                        <div class="card-glow"></div>
+                        <div class="spec-value">∞</div>
+                        <div class="spec-label">Durability Cycles</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── CTA ───────────────────────────────────── -->
+        <section id="cta" class="content-section cta-section">
+            <div class="section-inner">
+                <div class="cta-content reveal-up">
+                    <span class="section-tag">04 — EXPERIENCE</span>
+                    <h2 class="cta-title">Ready to<br><em>Defy Gravity?</em></h2>
+                    <p class="cta-text">Limited edition release. Only 2,026 pairs worldwide.</p>
+                    <a href="#" class="cta-button" id="cta-button">
+                        <span class="btn-text">PRE-ORDER NOW</span>
+                        <span class="btn-glow"></span>
+                    </a>
+                    <p class="cta-price">$349 <span class="price-note">/ Free Worldwide Shipping</span></p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── FOOTER ────────────────────────────────── -->
+        <footer class="site-footer">
+            <div class="footer-inner">
+                <span class="footer-logo">◈ ANTIGRAVITY</span>
+                <span class="footer-copy">© 2026 — All laws of physics reserved.</span>
+            </div>
+        </footer>
+
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
