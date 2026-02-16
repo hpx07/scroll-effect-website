@@ -60,37 +60,71 @@
     let canvasH = 0;
     let dpr = 1;
 
-    /* ── Frame Image Preloader (with decode) ───────────── */
-    const frames = [];
+    /* ── Frame Image Storage ────────────────────────────── */
+    const frames = new Array(CONFIG.FRAME_COUNT).fill(null);
+    const frameStatus = new Array(CONFIG.FRAME_COUNT).fill(0); // 0=idle, 1=loading, 2=ready
 
+    /* ── Build frame URL ───────────────────────────────── */
+    function frameUrl(index) {
+        const num = String(index + 1).padStart(3, '0');
+        return `${CONFIG.FRAME_PATH}${num}.png`;
+    }
+
+    /* ── Load a single frame (returns promise) ─────────── */
+    function loadFrame(index) {
+        if (frameStatus[index] >= 1) return; // already loading or ready
+        frameStatus[index] = 1;
+
+        const img = new Image();
+        img.src = frameUrl(index);
+
+        const markReady = () => {
+            frameStatus[index] = 2;
+            frames[index] = img;
+            // Mark as loaded once first frame is ready (show immediately)
+            if (!state.allLoaded && index === 0) {
+                state.allLoaded = true;
+                resizeCanvas();
+                drawFrameToBuffer(0);
+                blitBuffer();
+            }
+        };
+
+        img.onload = () => {
+            if (img.decode) {
+                img.decode().then(markReady).catch(markReady);
+            } else {
+                markReady();
+            }
+        };
+        img.onerror = () => { frameStatus[index] = 0; }; // retry later
+    }
+
+    /* ── Progressive Preloader ─────────────────────────── */
     function preloadFrames() {
-        let loaded = 0;
-        for (let i = 1; i <= CONFIG.FRAME_COUNT; i++) {
-            const img = new Image();
-            const num = String(i).padStart(2, '0');
-            img.src = `${CONFIG.FRAME_PATH}${num}.png`;
-
-            const onReady = () => {
-                loaded++;
-                if (loaded === CONFIG.FRAME_COUNT) {
-                    state.allLoaded = true;
-                    resizeCanvas();
-                    drawFrameToBuffer(0);
-                    blitBuffer();
-                }
-            };
-
-            // Use decode() for flicker-free rendering when available
-            img.onload = () => {
-                if (img.decode) {
-                    img.decode().then(onReady).catch(onReady);
-                } else {
-                    onReady();
-                }
-            };
-            img.onerror = onReady;
-            frames.push(img);
+        // Phase 1: Load ~20 evenly-spaced keyframes for immediate coverage
+        const keyframeCount = 20;
+        for (let i = 0; i < keyframeCount; i++) {
+            const idx = Math.round(i * (CONFIG.FRAME_COUNT - 1) / (keyframeCount - 1));
+            loadFrame(idx);
         }
+
+        // Phase 2: Continuously load nearby frames based on scroll position
+        setInterval(() => {
+            const center = state.targetFrame;
+            // Load frames in a radius around current position
+            for (let offset = 0; offset <= 8; offset++) {
+                if (center + offset < CONFIG.FRAME_COUNT) loadFrame(center + offset);
+                if (center - offset >= 0) loadFrame(center - offset);
+            }
+            // Also trickle-load remaining frames in background
+            for (let i = 0; i < CONFIG.FRAME_COUNT; i++) {
+                if (frameStatus[i] === 0) {
+                    loadFrame(i);
+                    break; // one per tick to avoid network flood
+                }
+            }
+        }, 100);
     }
 
     /* ── Canvas Sizing ─────────────────────────────────── */
@@ -116,9 +150,24 @@
 
     /* ── Draw Frame to Offscreen Buffer ────────────────── */
     function drawFrameToBuffer(index) {
-        if (!state.allLoaded || !offCtx) return;
-        const img = frames[index];
-        if (!img || !img.complete || !img.naturalWidth) return;
+        if (!offCtx) return;
+
+        // Find the best available frame (exact or nearest loaded)
+        let img = frames[index];
+        if (!img || !img.complete || !img.naturalWidth) {
+            // Search nearest loaded frame in both directions
+            for (let offset = 1; offset < CONFIG.FRAME_COUNT; offset++) {
+                const before = index - offset;
+                const after = index + offset;
+                if (before >= 0 && frames[before] && frames[before].complete && frames[before].naturalWidth) {
+                    img = frames[before]; break;
+                }
+                if (after < CONFIG.FRAME_COUNT && frames[after] && frames[after].complete && frames[after].naturalWidth) {
+                    img = frames[after]; break;
+                }
+            }
+            if (!img) return; // nothing loaded yet
+        }
 
         const cw = canvasW * dpr;
         const ch = canvasH * dpr;
@@ -212,7 +261,7 @@
         DOM.layer2.style.transform = `translate3d(0, ${layer2Y}px, 0)`;
 
         // ── Canvas: only redraw when frame actually changes ──
-        if (state.allLoaded && renderFrame !== state.displayedFrame) {
+        if (renderFrame !== state.displayedFrame) {
             const clampedFrame = Math.min(Math.max(renderFrame, 0), CONFIG.FRAME_COUNT - 1);
             drawFrameToBuffer(clampedFrame);
             blitBuffer();
