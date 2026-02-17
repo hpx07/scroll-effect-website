@@ -131,7 +131,7 @@ img {
             rgba(168, 85, 247, 0.08) 30%,
             rgba(217, 70, 239, 0.04) 55%,
             transparent 75%);
-    filter: blur(80px);
+    filter: blur(2px);
     border-radius: 50%;
     animation: nebulaPulse 12s ease-in-out infinite alternate;
 }
@@ -139,7 +139,7 @@ img {
 .nebula-arm {
     position: absolute;
     border-radius: 50%;
-    filter: blur(100px);
+    filter: blur(2px);
     opacity: 0.6;
 }
 
@@ -290,7 +290,7 @@ img {
             rgba(168, 85, 247, 0.08) 50%,
             rgba(255, 255, 255, 0.12) 100%);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(4px);
+    backdrop-filter: blur(2px);
     box-shadow:
         0 0 20px rgba(168, 85, 247, 0.08),
         inset 0 0 15px rgba(255, 255, 255, 0.03);
@@ -368,8 +368,8 @@ img {
     z-index: 100;
     padding: 0 clamp(20px, 4vw, 60px);
     background: rgba(6, 5, 11, 0.4);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
     border-bottom: 1px solid var(--color-border);
     transition: background 0.4s ease, box-shadow 0.4s ease;
 }
@@ -696,9 +696,9 @@ img {
     padding: 10px 0;
     background: rgba(6, 5, 11, 0.85);
     /* Darker bg, less reliance on blur */
-    backdrop-filter: blur(8px);
+    backdrop-filter: blur(2px);
     /* Reduced from default */
-    -webkit-backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(2px);
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
@@ -707,9 +707,9 @@ img {
     position: relative;
     background: rgba(6, 5, 11, 0.85);
     /* Slightly more opaque for readability */
-    backdrop-filter: blur(10px);
+    backdrop-filter: blur(2px);
     /* Reduced blur for performance */
-    -webkit-backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(2px);
 }
 
 .section-inner {
@@ -762,8 +762,8 @@ img {
     border: 1px solid var(--color-border);
     border-radius: 20px;
     padding: clamp(28px, 3vw, 44px);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
     overflow: hidden;
     transition: border-color 0.4s ease, transform 0.5s var(--ease-out-expo), box-shadow 0.4s ease;
 }
