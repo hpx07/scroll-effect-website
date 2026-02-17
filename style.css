@@ -475,12 +475,8 @@ img {
     height: 100vh;
     z-index: 0;
     pointer-events: none;
-    will-change: transform;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
-    transform-style: preserve-3d;
+    /* GPU hints removed for CPU testing */
     image-rendering: auto;
-    transform: translate3d(0, 0, 0);
 }
 
 /* ═══════════════════════════════════════════════════════════
