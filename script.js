@@ -1,8 +1,7 @@
 /* ═══════════════════════════════════════════════════════════
    ANTIGRAVITY — Scroll Engine & Interactions
-   Optimized: double-buffered canvas, createImageBitmap,
-   delta-time lerp, progressive load, single rAF loop,
-   Service Worker registration
+   Optimized: double-buffered canvas, delta-time lerp,
+   progressive load, single rAF loop, virtual scroll
    ═══════════════════════════════════════════════════════════ */
 
 (() => {
@@ -37,11 +36,23 @@
         smoothMouseY: 0,
     };
 
-    /* ── DOM References (cached once) ──────────────────── */
+    /* ── DOM References ─────────────────────────────────── */
     const $ = (s) => document.querySelector(s);
     const $$ = (s) => document.querySelectorAll(s);
 
     const DOM = {};
+
+    function cacheDOM() {
+        DOM.layer1 = $('#parallax-layer-1');
+        DOM.layer2 = $('#parallax-layer-2');
+        DOM.canvas = $('#frame-canvas');
+        DOM.heroSection = $('#hero');
+        DOM.heroContent = $('.hero-content');
+        DOM.nav = $('#main-nav');
+        DOM.smoothWrapper = $('#smooth-wrapper');
+        DOM.smoothContent = $('#smooth-content');
+        DOM.revealEls = $$('.reveal-up');
+    }
 
     /* ── Canvas contexts ───────────────────────────────── */
     let ctx, offscreen, offCtx;
@@ -52,6 +63,10 @@
     const frameStatus = new Uint8Array(CONFIG.FRAME_COUNT);
     let anyFrameReady = false;
     let framesLoadedCount = 0;
+
+    /* ── Cached element arrays for mouse parallax ──────── */
+    let blobEls = [];
+    let shardEls = [];
 
     /* ── Service Worker Registration ───────────────────── */
     function registerSW() {
@@ -72,7 +87,7 @@
 
         const url = frameUrl(index);
 
-        // FORCE CPU: Always use standard Image element, never createImageBitmap
+        // FORCE CPU: Always use standard Image element
         const img = new Image();
         img.src = url;
         img.onload = () => {
@@ -143,7 +158,7 @@
         }
     }
 
-    /* ── Canvas Sizing ─────────────────────────────────── */
+    /* ── Canvas Sizing & Body Height ───────────────────── */
     function resizeCanvas() {
         dpr = Math.min(window.devicePixelRatio || 1, 2);
         canvasW = window.innerWidth;
@@ -157,12 +172,21 @@
         DOM.canvas.style.width = canvasW + 'px';
         DOM.canvas.style.height = canvasH + 'px';
 
-        offscreen = document.createElement('canvas'); // Standard canvas (CPU-friendly)
+        offscreen = document.createElement('canvas'); // Standard canvas
         offscreen.width = pw;
         offscreen.height = ph;
         offCtx = offscreen.getContext('2d', { alpha: false });
 
         state.displayedFrame = -1;
+
+        // Update virtual scroll height
+        updateScrollHeight();
+    }
+
+    function updateScrollHeight() {
+        if (DOM.smoothContent) {
+            document.body.style.height = DOM.smoothContent.offsetHeight + 'px';
+        }
     }
 
     /* ── Draw Frame to Offscreen Buffer ────────────────── */
@@ -225,7 +249,7 @@
     }
 
     /* ═══════════════════════════════════════════════════════
-       SINGLE rAF LOOP — merges parallax + canvas + mouse
+       SINGLE rAF LOOP
        ═══════════════════════════════════════════════════════ */
     function animate(timestamp) {
         const dt = Math.min((timestamp - state.lastTime) / 1000, 0.1) || 0.016;
@@ -234,6 +258,13 @@
         // ── Smooth scroll values ──
         state.smoothScrollY = lerp(state.smoothScrollY, state.targetScrollY, CONFIG.LERP_FACTOR, dt);
         state.smoothScrollProgress = lerp(state.smoothScrollProgress, state.targetScrollProgress, CONFIG.CANVAS_LERP, dt);
+
+        // ── VIRTUAL SCROLL (The Page Content) ──
+        if (DOM.smoothContent) {
+            // Using transform for content is mandatory for smooth scroll feel
+            // even if parallax layers are on CPU.
+            DOM.smoothContent.style.transform = `translate3d(0, ${-state.smoothScrollY}px, 0)`;
+        }
 
         // ── Frame interpolation ──
         const sf = lerp(
@@ -245,12 +276,11 @@
         state.currentFrame = sf;
         const renderFrame = Math.round(sf);
 
-        // ── Parallax layers (CPU FORCE: top/marginTop) ──
-        // Using `top` or `marginTop` triggers layout, causing repaint (CPU bound)
+        // ── Parallax layers (CPU FORCE: marginTop) ──
         DOM.layer1.style.marginTop = `${-(state.smoothScrollY * CONFIG.PARALLAX_SPEEDS.layer1)}px`;
         DOM.layer2.style.marginTop = `${-(state.smoothScrollY * CONFIG.PARALLAX_SPEEDS.layer2)}px`;
 
-        // ── Canvas draw (only on frame change) ──
+        // ── Canvas draw ──
         if (renderFrame !== state.displayedFrame && anyFrameReady) {
             const cf = Math.min(Math.max(renderFrame, 0), CONFIG.FRAME_COUNT - 1);
             drawFrameToBuffer(cf);
@@ -258,11 +288,7 @@
             state.displayedFrame = cf;
         }
 
-        // ── Canvas scale (REMOVED for CPU test) ──
-        // Scale requires transform, so we remove it to verify CPU positioning only.
-        // DOM.canvas.style.transform = `translate3d(0,0,0) scale(${scale})`; 
-
-        // ── Mouse parallax (CPU FORCE: marginLeft/marginTop) ──
+        // ── Mouse parallax (CPU FORCE: marginLeft/Top) ──
         state.smoothMouseX += (state.mouseX - state.smoothMouseX) * 0.04;
         state.smoothMouseY += (state.mouseY - state.smoothMouseY) * 0.04;
 
@@ -271,7 +297,6 @@
 
         for (let i = 0; i < blobEls.length; i++) {
             const f = 8 + i * 4;
-            // Using marginLeft/marginTop forces layout recalc (CPU)
             blobEls[i].style.marginLeft = `${mx * f}px`;
             blobEls[i].style.marginTop = `${my * f}px`;
         }
@@ -283,10 +308,6 @@
 
         requestAnimationFrame(animate);
     }
-
-    /* ── Cached element arrays for mouse parallax ──────── */
-    let blobEls = [];
-    let shardEls = [];
 
     /* ── Intersection Observer ─────────────────────────── */
     function initRevealObserver() {
@@ -308,7 +329,30 @@
             link.addEventListener('click', (e) => {
                 e.preventDefault();
                 const t = document.querySelector(link.getAttribute('href'));
-                if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                if (t) {
+                    // For virtual scroll, we need to scroll the window to the target's offset
+                    // But since target is transformed, we need to calculate its original offset
+                    // This is tricky with virtual scroll. 
+                    // Simple hack: window.scrollTo with calculated position.
+                    // Since body height is set, window.scrollTo works.
+                    // The onScroll handler will update state.targetScrollY.
+
+                    // We need to account for the fact that elements are inside the transformed container?
+                    // No, getBoundingClientRect() will return position relative to viewport.
+                    // offsetTop is relative to parent.
+                    // The safest way is to just use window.scrollTo because onScroll drives the transformer.
+
+                    // Calculate absolute position relative to document top (ignoring current transform)
+                    // Actually, since we essentially "hijack" the visual view, window scrollbar positions match the content height.
+                    // So t.offsetTop should be roughly correct if smooth-content is relative?
+                    // No, smooth-content is static in flow, but transformed.
+                    // Let's just trust standard scrollIntoView for now, or use window.scrollTo(0, t.offsetTop)
+
+                    window.scrollTo({
+                        top: t.offsetTop,
+                        behavior: 'smooth'
+                    });
+                }
             });
         });
     }
@@ -328,28 +372,17 @@
 
     /* ── Initialize ─────────────────────────────────────── */
     function init() {
-        // Cache DOM
-        DOM.layer1 = $('#parallax-layer-1');
-        DOM.layer2 = $('#parallax-layer-2');
-        DOM.canvas = $('#frame-canvas');
-        DOM.heroSection = $('#hero');
-        DOM.heroContent = $('.hero-content');
-        DOM.nav = $('#main-nav');
-        DOM.revealEls = $$('.reveal-up');
+        cacheDOM();
 
         ctx = DOM.canvas.getContext('2d', { alpha: false });
         blobEls = Array.from(document.querySelectorAll('.chrome-blob'));
         shardEls = Array.from(document.querySelectorAll('.crystal-shard'));
 
-        // Register Service Worker
         registerSW();
-
-        // Start loading
         preloadFrames();
         initRevealObserver();
         initSmoothNav();
 
-        // Events
         window.addEventListener('scroll', onScroll, { passive: true });
         window.addEventListener('resize', onResize, { passive: true });
         document.addEventListener('mousemove', (e) => {
@@ -357,6 +390,8 @@
             state.mouseY = (e.clientY / window.innerHeight - 0.5) * 2;
         }, { passive: true });
 
+        // Initial sizing
+        resizeCanvas();
         onScroll();
         requestAnimationFrame(animate);
     }
