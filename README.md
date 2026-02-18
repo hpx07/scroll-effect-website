@@ -2,4 +2,4 @@
 
 Go and checkout and tell what can be  done to make it more optimised...
 
-Note: Best Preview on desktop or on smartphone use desktop mode in chrome
+`Note: Best Preview on desktop or on smartphone use desktop mode in chrome`
